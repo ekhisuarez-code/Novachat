@@ -185,6 +185,120 @@ textarea::placeholder{color:var(--t3)}
 /* Hidden file input */
 #fileInput{display:none}
 #avatarInput{display:none}
+#myAvatarInput{display:none}
+
+/* ADMIN */
+#adminWrap{position:static}
+#adminBtn{background:var(--p3);border:1px solid var(--br);color:var(--t3);font-family:'JetBrains Mono',monospace;
+  font-size:10px;font-weight:700;letter-spacing:1px;padding:4px 10px;border-radius:7px;cursor:pointer;
+  transition:all .2s;user-select:none}
+#adminBtn.unlocked{border-color:#ff0040;color:#ff0040;box-shadow:0 0 8px rgba(255,0,64,.3);background:rgba(255,0,64,.08)}
+#adminBtn:hover{border-color:var(--t2);color:var(--t2)}
+
+/* Panel lateral derecho — ocupa toda la altura */
+#adminMenu{
+  position:fixed;top:0;right:-320px;width:300px;height:100vh;
+  background:var(--p1);border-left:1px solid #ff0040;
+  box-shadow:-4px 0 30px rgba(255,0,64,.15);
+  z-index:300;display:flex;flex-direction:column;
+  transition:right .3s cubic-bezier(.4,0,.2,1);
+  overflow:hidden;
+}
+#adminMenu.open{right:0}
+#adminMenu::before{content:'';position:absolute;top:0;left:0;bottom:0;width:1px;
+  background:linear-gradient(180deg,transparent,#ff0040 20%,#ff0040 80%,transparent)}
+
+/* Cabecera del panel con flecha */
+.admin-arrow-row{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:14px 16px;border-bottom:1px solid rgba(255,0,64,.2);
+  cursor:pointer;user-select:none;flex-shrink:0;
+  background:rgba(255,0,64,.05);
+}
+.admin-arrow-row:hover{background:rgba(255,0,64,.1)}
+.arrow-icon{font-size:18px;color:#ff0040;transition:transform .3s;display:inline-block}
+.arrow-icon.closed{transform:rotate(-90deg)}
+
+/* Contenido scrollable */
+#adminInner{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px;
+  scrollbar-width:thin;scrollbar-color:rgba(255,0,64,.3) transparent}
+.adm-title{font-family:'Syne',sans-serif;font-size:14px;font-weight:700;color:#ff0040;
+  margin-bottom:10px;display:flex;align-items:center;gap:6px}
+.adm-sub{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--t3);letter-spacing:2px;
+  text-transform:uppercase;margin:10px 0 6px}
+.adm-input-row{display:flex;gap:6px;margin-bottom:8px}
+.adm-inp{flex:1;background:var(--p2);border:1px solid var(--br);border-radius:7px;padding:7px 10px;
+  color:var(--txt);font-family:'JetBrains Mono',monospace;font-size:12px;outline:none;transition:all .2s}
+.adm-inp:focus{border-color:#ff0040}
+.adm-inp::placeholder{color:var(--t3)}
+.adm-btn{padding:7px 12px;border:none;border-radius:7px;font-weight:700;cursor:pointer;
+  font-family:'DM Sans',sans-serif;font-size:12px;transition:all .2s;white-space:nowrap}
+.adm-ban{background:rgba(255,0,64,.15);color:#ff0040;border:1px solid rgba(255,0,64,.3)}
+.adm-ban:hover{background:#ff0040;color:#fff}
+.adm-unban{background:rgba(0,200,100,.1);color:#00c864;border:1px solid rgba(0,200,100,.25)}
+.adm-unban:hover{background:#00c864;color:#000}
+.adm-list{max-height:130px;overflow-y:auto;display:flex;flex-direction:column;gap:4px}
+.adm-item{display:flex;align-items:center;gap:8px;padding:6px 8px;background:var(--p2);
+  border-radius:7px;border:1px solid rgba(255,0,64,.15)}
+.adm-item-code{font-family:'JetBrains Mono',monospace;font-size:11px;color:#ff0040;flex:1}
+.adm-item-rm{background:none;border:none;color:var(--t3);cursor:pointer;font-size:14px;
+  padding:0 2px;transition:color .15s}
+.adm-item-rm:hover{color:#ff0040}
+.adm-empty{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--t3);
+  text-align:center;padding:8px}
+#adminPin{display:block}
+#adminPanel{display:none}
+
+/* MI AVATAR en la barra */
+#myAvBdg{width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,#1f1200,#3a2000);
+  border:1px solid var(--br2);cursor:pointer;overflow:hidden;display:flex;align-items:center;
+  justify-content:center;font-family:'Syne',sans-serif;font-weight:700;font-size:12px;
+  color:var(--acc);flex-shrink:0;transition:all .2s;position:relative}
+#myAvBdg:hover{border-color:var(--acc);box-shadow:var(--glow)}
+#myAvBdg:hover::after{content:'📷';position:absolute;inset:0;background:rgba(0,0,0,.6);
+  display:flex;align-items:center;justify-content:center;font-size:13px;border-radius:7px}
+#myAvBdg img{width:100%;height:100%;object-fit:cover;border-radius:7px}
+
+/* CHAT PÚBLICO */
+.pub-btn{background:var(--adim);border:1px solid var(--br2);color:var(--acc);font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;padding:6px 10px;border-radius:7px;cursor:pointer;transition:all .2s;white-space:nowrap}
+.pub-btn:hover{background:rgba(255,107,0,.25);box-shadow:var(--glow)}
+.pub-btn.active{background:rgba(255,107,0,.2);border-color:var(--acc);box-shadow:var(--glow)}
+#pubPanel{display:none;position:fixed;inset:0;z-index:80;background:var(--bg);flex-direction:column}
+#pubPanel.open{display:flex}
+#pubBar{height:50px;background:var(--p1);border-bottom:1px solid var(--br);display:flex;align-items:center;padding:0 16px;gap:12px;flex-shrink:0}
+#pubBar .ptitle{font-family:'Syne',sans-serif;font-size:16px;font-weight:700;flex:1}
+#pubBar .pdot{width:8px;height:8px;border-radius:50%;background:var(--t3);transition:all .3s}
+#pubBar .pdot.on{background:#00e676;box-shadow:0 0 8px #00e676}
+#pubBar .pdot.spin{animation:bl 1s infinite}
+#pubUsers{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--t2)}
+#pubMsgs{flex:1;overflow-y:auto;padding:16px 20px;display:flex;flex-direction:column;gap:4px;background:var(--bg)}
+.pmrow{display:flex;gap:8px;align-items:flex-start;margin-bottom:4px}
+.pmrow.me{flex-direction:row-reverse}
+.pmav{width:28px;height:28px;border-radius:7px;background:linear-gradient(135deg,#0d2040,#1a3a60);color:#6ab0ff;display:flex;align-items:center;justify-content:center;font-family:'Syne',sans-serif;font-weight:700;font-size:11px;flex-shrink:0}
+.pmav.me{background:linear-gradient(135deg,#1f1200,#3a2000);color:var(--acc)}
+.pmbody{max-width:70%;display:flex;flex-direction:column}
+.pmrow.me .pmbody{align-items:flex-end}
+.pmnick{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--t2);margin-bottom:2px}
+.pmrow.me .pmnick{color:var(--acc)}
+.pmbub{padding:8px 12px;border-radius:12px;font-size:13.5px;line-height:1.45;word-break:break-word;white-space:pre-wrap}
+.pmbub.them{background:var(--p2);border:1px solid var(--p4);border-bottom-left-radius:3px}
+.pmbub.me{background:linear-gradient(135deg,#ff6b00,#ff9500);color:#fff;border-bottom-right-radius:3px;font-weight:500}
+.pmtime{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--t3);margin-top:3px}
+.psys{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--t3);text-align:center;padding:4px 0;font-style:italic}
+#pubIbar{padding:10px 14px;background:var(--p1);border-top:1px solid var(--br);display:flex;gap:8px;align-items:flex-end;position:relative}
+#pubImgPreview{display:none;position:absolute;bottom:62px;left:14px;right:14px;background:var(--p2);border:1px solid var(--br2);border-radius:12px;padding:10px;gap:10px;align-items:center;z-index:40}
+#pubImgPreview.show{display:flex}
+#pubImgPreview img{max-height:70px;border-radius:8px;object-fit:cover}
+#pubImgPreview span{flex:1;font-size:12px;color:var(--t2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#pubImgPreview button{background:var(--rdim);border:1px solid rgba(240,64,96,.2);color:var(--red);border-radius:6px;padding:4px 8px;cursor:pointer;font-size:12px;flex-shrink:0}
+#pubEpicker{position:absolute;bottom:62px;left:14px;background:var(--p1);border:1px solid var(--br2);border-radius:14px;padding:10px;box-shadow:var(--ng);z-index:50;display:none;width:300px;max-height:240px;overflow-y:auto}
+#pubEpicker.open{display:block}
+#pubIbar .iwrap{flex:1;background:var(--p2);border:1px solid var(--br);border-radius:10px;display:flex;overflow:hidden;transition:all .2s}
+#pubIbar .iwrap:focus-within{border-color:var(--acc);box-shadow:0 0 0 3px rgba(255,107,0,.1)}
+#pubTa{flex:1;background:transparent;border:none;padding:9px 12px;color:var(--txt);resize:none;outline:none;font-family:'DM Sans',sans-serif;font-size:14px;line-height:1.45;min-height:38px;max-height:100px;overflow-y:auto}
+#pubTa::placeholder{color:var(--t3)}
+#pubSend{width:36px;height:36px;border-radius:9px;background:linear-gradient(135deg,#ff6b00,#ff9500);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#fff;font-size:15px;transition:all .2s;box-shadow:0 4px 14px rgba(255,107,0,.25)}
+#pubSend:hover{transform:translateY(-1px);box-shadow:0 6px 20px rgba(255,107,0,.4)}
 
 /* CUSTOM EMOJI SECTION */
 .ecat-custom{font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--acc);letter-spacing:2px;text-transform:uppercase;padding:6px 4px 4px;border-top:1px solid var(--p4);margin-top:6px}
@@ -219,7 +333,49 @@ textarea::placeholder{color:var(--t3)}
     <div class="dot spin" id="dot"></div>
     <span id="stxt">conectando…</span>
     <div id="idbdg" class="bdg" onclick="copyCode()">ID <b id="myid">····</b></div>
+    <div id="myAvBdg" onclick="changeMyAvatar()" title="Cambiar tu foto de perfil"><span id="myAvLetter">?</span></div>
     <div id="nickbdg" class="bdg" onclick="editNick()">✎ <span id="nickspan" style="color:var(--acc)">Sin nombre</span></div>
+    <button class="pub-btn" id="pubToggleBtn" onclick="togglePub()">🌐 SALA PÚBLICA</button>
+    <div id="adminWrap">
+      <button id="adminBtn" onclick="toggleAdminMenu()">🔒 ADMIN</button>
+      <div id="adminMenu">
+        <!-- Fila con flecha para abrir/cerrar -->
+        <div class="admin-arrow-row" onclick="toggleAdminMenu()">
+          <span style="font-family:'Syne',sans-serif;font-size:14px;font-weight:700;color:#ff0040;letter-spacing:.5px">⚠️ MODO ADMIN</span>
+          <span class="arrow-icon closed" id="adminArrow">▶</span>
+        </div>
+        <div id="adminInner">
+        <!-- PIN -->
+        <div id="adminPin">
+          <div class="adm-title">🔐 Acceso Admin</div>
+          <div class="adm-input-row">
+            <input class="adm-inp" id="adminPinInput" type="password" placeholder="Código..." maxlength="6"
+              onkeydown="if(event.key==='Enter')checkAdminPin()">
+            <button class="adm-btn adm-ban" onclick="checkAdminPin()">ENTRAR</button>
+          </div>
+          <div id="adminPinErr" style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#ff0040;display:none">
+            ✕ Código incorrecto
+          </div>
+        </div>
+        <!-- PANEL (visible tras autenticación) -->
+        <div id="adminPanel">
+          <div class="adm-title">⚠️ Panel Admin</div>
+          <div class="adm-sub">Banear código</div>
+          <div class="adm-input-row">
+            <input class="adm-inp" id="banInput" placeholder="Código (4 dígitos)" maxlength="4" inputmode="numeric"
+              onkeydown="if(event.key==='Enter')adminBan()">
+            <button class="adm-btn adm-ban" onclick="adminBan()">BAN</button>
+          </div>
+          <div class="adm-sub">Baneados</div>
+          <div class="adm-list" id="banList"></div>
+          <div style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,0,64,.15)">
+            <button class="adm-btn" style="background:transparent;border:1px solid var(--br);color:var(--t2);font-size:11px;width:100%"
+              onclick="adminLock()">🔒 Bloquear panel</button>
+          </div>
+        </div>
+        </div><!-- /adminInner -->
+      </div>
+    </div>
   </div>
   <div class="layout">
     <div class="sidebar">
@@ -232,6 +388,26 @@ textarea::placeholder{color:var(--t3)}
   </div>
 </div>
 
+<!-- CHAT PÚBLICO -->
+<div id="pubPanel">
+  <div id="pubBar">
+    <div class="pdot spin" id="pdot"></div>
+    <div class="ptitle">🌐 Sala Pública</div>
+    <span id="pubUsers">0 conectados</span>
+    <button class="pub-btn" onclick="togglePub()">✕ Cerrar</button>
+  </div>
+  <div id="pubMsgs"></div>
+  <div id="pubIbar">
+    <div id="pubImgPreview"></div>
+    <div id="pubEpicker"></div>
+    <button class="iaction" onclick="pubToggleEmoji()" title="Emojis">😊</button>
+    <button class="iaction" onclick="pubPickPhoto()" title="Enviar foto">📷</button>
+    <div class="iwrap"><textarea id="pubTa" placeholder="Escribe en la sala pública…" rows="1"></textarea></div>
+    <button id="pubSendBtn" class="sbtn iaction" onclick="pubSend()">➔</button>
+  </div>
+</div>
+<input type="file" id="pubFileInput" accept="image/*" onchange="pubOnFile(event)">
+
 <!-- Lightbox para ver fotos a tamaño completo -->
 <div id="lightbox" onclick="closeLightbox()"><img id="lbImg" src=""></div>
 
@@ -239,6 +415,8 @@ textarea::placeholder{color:var(--t3)}
 <input type="file" id="fileInput" accept="image/*" onchange="onFileSelected(event)">
 <!-- Input oculto para cambiar avatar del contacto -->
 <input type="file" id="avatarInput" accept="image/*" onchange="onAvatarSelected(event)">
+<!-- Input oculto para cambiar tu propia foto de perfil -->
+<input type="file" id="myAvatarInput" accept="image/*" onchange="onMyAvatarSelected(event)">
 
 <div id="toast"></div>
 
@@ -283,7 +461,8 @@ const myCode = (() => {
   return c;
 })();
 document.getElementById('splashCode').textContent = myCode;
-let myNick = localStorage.getItem('nc_nick') || '';
+let myNick   = localStorage.getItem('nc_nick') || '';
+let myAvatar = localStorage.getItem('nc_avatar') || ''; // foto de perfil propia (base64)
 
 let peer   = null;
 let chats  = {};   // id → { name, members[], messages[], avatar? }
@@ -413,6 +592,10 @@ function _onMsg({ chatId, sender, senderName, text, img, ts, members }) {
     chats[chatId] = { name, members: members?.length ? members : [myCode,sender], messages:[] };
     toast('💬 '+name,'ok');
   }
+  // Guardar/actualizar avatar del remitente si lo trae
+  if (arguments[0].senderAvatar && chats[chatId] && !chats[chatId].avatar) {
+    chats[chatId].avatar = arguments[0].senderAvatar;
+  }
   // img='pending' significa que los chunks vienen justo después
   const imgVal = (!img || img==='pending' || img==='__chunked__') ? null : img;
   const msgTs = ts||Date.now();
@@ -498,6 +681,7 @@ async function sendMsg() {
   const hasImg = !!img;
   const payload = {
     type:'msg', chatId:snap, sender:myCode, senderName:myNick||myCode,
+    senderAvatar: myAvatar || null,
     text, img: hasImg ? 'pending' : null, ts, members:chat.members
   };
   const targets = chat.members.filter(m=>m!==myCode);
@@ -840,6 +1024,49 @@ function createChat() {
   saveChats(); renderList(); closeModal(); openChat(id); toast('Chat creado ✓','ok');
 }
 
+// ── MI FOTO DE PERFIL ────────────────────────────
+function changeMyAvatar() {
+  document.getElementById('myAvatarInput').click();
+}
+
+function onMyAvatarSelected(e) {
+  const file = e.target.files[0]; if (!file) return;
+  if (file.size > 5*1024*1024) { toast('Máximo 5 MB','bad'); e.target.value=''; return; }
+  const reader = new FileReader();
+  reader.onload = ev => {
+    const img = new Image();
+    img.onload = () => {
+      // Comprimir a 200x200 para la foto de perfil
+      const SIZE=200, canvas=document.createElement('canvas');
+      let w=img.width, h=img.height;
+      const min=Math.min(w,h);
+      // Recorte cuadrado centrado
+      const sx=(w-min)/2, sy=(h-min)/2;
+      canvas.width=SIZE; canvas.height=SIZE;
+      canvas.getContext('2d').drawImage(img,sx,sy,min,min,0,0,SIZE,SIZE);
+      myAvatar = canvas.toDataURL('image/jpeg',0.8);
+      localStorage.setItem('nc_avatar', myAvatar);
+      updateMyAvBadge();
+      toast('Foto de perfil actualizada ✓','ok');
+    };
+    img.src = ev.target.result;
+  };
+  reader.readAsDataURL(file);
+  e.target.value='';
+}
+
+function updateMyAvBadge() {
+  const bdg = document.getElementById('myAvBdg');
+  const letter = document.getElementById('myAvLetter');
+  if (!bdg) return;
+  if (myAvatar) {
+    bdg.innerHTML = `<img src="${myAvatar}">`;
+  } else {
+    const l = (myNick||myCode||'?')[0].toUpperCase();
+    bdg.innerHTML = `<span id="myAvLetter">${l}</span>`;
+  }
+}
+
 // ── NICKNAME ───────────────────────────────────
 function editNick() {
   const badge=document.getElementById('nickbdg'), old=myNick;
@@ -854,6 +1081,7 @@ function saveNick(val) {
   myNick=val.trim(); localStorage.setItem('nc_nick',myNick);
   const b=document.getElementById('nickbdg');
   if(b) b.innerHTML='✎ <span id="nickspan" style="color:var(--acc)">'+esc(myNick||'Sin nombre')+'</span>';
+  updateMyAvBadge(); // actualizar inicial si no hay foto
   if(myNick) toast('Nombre: '+myNick,'ok');
 }
 
@@ -862,6 +1090,404 @@ function copyCode() {
   navigator.clipboard.writeText(myCode).then(()=>toast('Código copiado: '+myCode,'ok')).catch(()=>toast('No se pudo copiar','bad'));
 }
 
+// ── CHAT PÚBLICO ─────────────────────────────────
+const PUB_ID     = 'novachat_pub_sala_2025';
+let pubPeer      = null;
+let pubConns     = [];
+const pubSeen    = new Set();
+const _pubBound  = new WeakSet();
+const _pubImgBufs = {};
+let _pubPendingImg = null;
+
+function togglePub() {
+  const panel = document.getElementById('pubPanel');
+  const btn   = document.getElementById('pubToggleBtn');
+  if (panel.classList.contains('open')) {
+    panel.classList.remove('open'); btn.classList.remove('active');
+  } else {
+    panel.classList.add('open'); btn.classList.add('active');
+    if (!pubPeer) initPub();
+    setTimeout(()=>document.getElementById('pubTa')?.focus(), 100);
+  }
+}
+
+function initPub() {
+  if (typeof Peer==='undefined') return;
+  setPubDot('spin');
+
+  pubPeer = new Peer(undefined, { config:{ iceServers:[
+    {urls:'stun:stun.l.google.com:19302'},
+    {urls:'stun:stun1.l.google.com:19302'},
+    {urls:'stun:stun.cloudflare.com:3478'}
+  ]}});
+
+  pubPeer.on('open', () => {
+    setPubDot('on');
+    pubLog('Conectado · nick: '+(myNick||myCode), 'sys');
+    const hc = pubPeer.connect(PUB_ID, {reliable:true, serialization:'json'});
+    pubAttach(hc);
+    pubPeer.on('connection', conn => pubAttach(conn));
+  });
+  pubPeer.on('error', err => { if(err.type==='peer-unavailable'||err.type==='unavailable-id') return; });
+
+  const hp = new Peer(PUB_ID, {config:{iceServers:[{urls:'stun:stun.l.google.com:19302'}]}});
+  hp.on('open', ()=> pubLog('Eres el primer nodo · esperando…','sys'));
+  hp.on('connection', conn => pubAttach(conn));
+  hp.on('error', ()=>{});
+}
+
+function pubAttach(conn) {
+  if (_pubBound.has(conn)) return;
+  _pubBound.add(conn);
+  conn.on('open', () => {
+    // Rechazar baneados
+    const connCode = conn.peer.replace('nc_','');
+    if (isBanned(connCode)) {
+      try { conn.send({type:'you_are_banned'}); conn.close(); } catch {}
+      return;
+    }
+    if (!pubConns.find(c=>c.peer===conn.peer)) pubConns.push(conn);
+    updatePubCount();
+    conn.on('data', data => {
+      if (!data) return;
+      // Si nos banean, cerrar conexión y salir de la sala
+      if (data.type==='you_are_banned') {
+        pubLog('Has sido baneado de la sala pública','sys');
+        setPubDot('err');
+        pubConns.forEach(c=>{try{c.close();}catch{}});
+        pubConns=[];
+        return;
+      }
+      // Chunk de imagen
+      if (data.type==='pub_img_chunk') { pubOnImgChunk(data); return; }
+      if (!data.id || pubSeen.has(data.id)) return;
+      // Ignorar mensajes de baneados
+      if (isBanned(data.code)) return;
+      pubSeen.add(data.id);
+      pubAppendMsg(data);
+      pubBroadcast(data, conn);
+    });
+    conn.on('close', () => {
+      pubConns = pubConns.filter(c=>c.peer!==conn.peer);
+      updatePubCount();
+      pubLog('Un usuario salió','sys');
+    });
+  });
+}
+
+function pubBroadcast(data, exclude) {
+  pubConns.forEach(c=>{ if(c.peer!==exclude?.peer&&c.open) c.send(data); });
+}
+
+function updatePubCount() {
+  document.getElementById('pubUsers').textContent = (pubConns.length+1)+' conectados';
+}
+
+// ── ENVIAR ─────────────────────────────────────
+async function pubSend() {
+  const ta   = document.getElementById('pubTa');
+  const sbtn = document.getElementById('pubSendBtn');
+  if (!ta) return;
+  const text = ta.value.trim();
+  const img  = _pubPendingImg || null;
+  if (!text && !img) return;
+
+  const ts   = Date.now();
+  const id   = ts.toString(36)+Math.random().toString(36).slice(2,6);
+  const nick = myNick || myCode;
+
+  // Mostrar localmente de inmediato
+  const data = { id, nick, code:myCode, avatar:myAvatar||null, text, img: img?'pending':null, ts };
+  pubSeen.add(id);
+  pubAppendMsg({ ...data, img }); // local con imagen completa
+
+  ta.value=''; ta.style.height='auto';
+  _pubPendingImg = null;
+  pubHideImgPreview();
+  if (sbtn) { sbtn.disabled=true; sbtn.textContent='···'; }
+
+  // Enviar a todos los peers
+  for (const conn of pubConns) {
+    if (!conn.open) continue;
+    try {
+      // Primero el mensaje de texto
+      conn.send(data);
+      // Luego los chunks de imagen si hay
+      if (img) {
+        setTimeout(async ()=>{
+          try { await pubSendImgChunked(conn, {id, code:myCode, ts, img}); } catch {}
+        }, 100);
+      }
+    } catch {}
+  }
+
+  if (sbtn) { sbtn.disabled=false; sbtn.textContent='➔'; }
+}
+
+// ── CHUNKS DE IMAGEN (mismo sistema que DMs) ──
+const PUB_CHUNK = 12000;
+async function pubSendImgChunked(conn, {id, code, ts, img}) {
+  const total = Math.ceil(img.length / PUB_CHUNK);
+  for (let i=0; i<total; i++) {
+    conn.send({ type:'pub_img_chunk', id, code, ts, chunk:img.slice(i*PUB_CHUNK,(i+1)*PUB_CHUNK), idx:i, total });
+    if (i%5===4) await new Promise(r=>setTimeout(r,30));
+  }
+  // Reenviar chunks a los demás
+  pubConns.forEach(c=>{ if(c.peer!==conn.peer&&c.open) {
+    (async()=>{
+      const total2=Math.ceil(img.length/PUB_CHUNK);
+      for(let i=0;i<total2;i++){
+        c.send({type:'pub_img_chunk',id,code,ts,chunk:img.slice(i*PUB_CHUNK,(i+1)*PUB_CHUNK),idx:i,total:total2});
+        if(i%5===4) await new Promise(r=>setTimeout(r,30));
+      }
+    })();
+  }});
+}
+
+function pubOnImgChunk({id, code, ts, chunk, idx, total}) {
+  const key = id+'_'+code;
+  if (!_pubImgBufs[key]) _pubImgBufs[key]={chunks:new Array(total),received:0,id,code,ts,total};
+  const buf=_pubImgBufs[key];
+  if (!buf.chunks[idx]){buf.chunks[idx]=chunk;buf.received++;}
+  if (buf.received===total) {
+    const fullImg=buf.chunks.join('');
+    delete _pubImgBufs[key];
+    // Buscar el div del mensaje y añadir imagen
+    const msgEl=document.querySelector(`[data-pubid="${id}"]`);
+    if (msgEl) {
+      const bub=msgEl.querySelector('.pmbub');
+      if (bub) {
+        const imgEl=document.createElement('img');
+        imgEl.src=fullImg; imgEl.style.cssText='max-width:100%;max-height:280px;border-radius:8px;display:block;cursor:pointer;margin-bottom:4px';
+        imgEl.onclick=()=>openLightbox(fullImg);
+        bub.prepend(imgEl);
+      }
+    }
+  }
+}
+
+// ── FOTO EN SALA PÚBLICA ──────────────────────
+function pubPickPhoto() { document.getElementById('pubFileInput').click(); }
+
+function pubOnFile(e) {
+  const file=e.target.files[0]; if(!file) return;
+  if(file.size>10*1024*1024){toast('Máximo 10 MB','bad');e.target.value='';return;}
+  const reader=new FileReader();
+  reader.onload=ev=>{
+    const img=new Image();
+    img.onload=()=>{
+      const MAX=900,canvas=document.createElement('canvas');
+      let w=img.width,h=img.height;
+      if(w>MAX||h>MAX){if(w>h){h=Math.round(h*MAX/w);w=MAX;}else{w=Math.round(w*MAX/h);h=MAX;}}
+      canvas.width=w;canvas.height=h;
+      canvas.getContext('2d').drawImage(img,0,0,w,h);
+      const compressed=canvas.toDataURL('image/jpeg',0.65);
+      _pubPendingImg=compressed;
+      pubShowImgPreview(file.name,compressed);
+    };
+    img.src=ev.target.result;
+  };
+  reader.readAsDataURL(file);
+  e.target.value='';
+}
+
+function pubShowImgPreview(name,src) {
+  const p=document.getElementById('pubImgPreview');if(!p)return;
+  p.innerHTML=`<img src="${src}"><span>${esc(name)}</span><button onclick="pubCancelImg()">✕</button>`;
+  p.classList.add('show');
+}
+function pubHideImgPreview(){const p=document.getElementById('pubImgPreview');if(p){p.classList.remove('show');p.innerHTML='';}}
+function pubCancelImg(){_pubPendingImg=null;pubHideImgPreview();}
+
+// ── EMOJI EN SALA PÚBLICA ─────────────────────
+function pubToggleEmoji() {
+  const p=document.getElementById('pubEpicker');if(!p)return;
+  if(p.classList.contains('open')){p.classList.remove('open');return;}
+  // Reutilizar el mismo contenido del picker privado
+  if(!p.innerHTML){
+    let html='';
+    for(const[cat,emojis]of Object.entries(EMOJIS)){
+      html+=`<div class="ecat">${cat}</div><div class="egrid">`;
+      html+=emojis.map(e=>`<div class="em" onclick="pubInsertEmoji('${e}')">${e}</div>`).join('');
+      html+='</div>';
+    }
+    html+='<div class="ecat-custom">⭐ PERSONALIZADOS</div><div class="egrid">';
+    html+=CUSTOM_EMOJIS.map(e=>`<div class="custom-em" onclick="pubInsertEmoji('[:${e.id}:]')" title="${e.label}"><img src="${e.src}"></div>`).join('');
+    html+='</div>';
+    p.innerHTML=html;
+  }
+  p.classList.add('open');
+}
+
+function pubInsertEmoji(em) {
+  const ta=document.getElementById('pubTa');if(!ta)return;
+  const s=ta.selectionStart,e=ta.selectionEnd;
+  ta.value=ta.value.slice(0,s)+em+ta.value.slice(e);
+  ta.selectionStart=ta.selectionEnd=s+em.length;
+  ta.focus();
+  document.getElementById('pubEpicker')?.classList.remove('open');
+}
+
+// Cerrar picker público al clicar fuera
+document.addEventListener('click', e=>{
+  const p=document.getElementById('pubEpicker');
+  if(p?.classList.contains('open')&&!p.contains(e.target)&&!e.target.closest('.iaction')) p.classList.remove('open');
+});
+
+// ── RENDER MENSAJE ────────────────────────────
+function pubAppendMsg(data) {
+  const el=document.getElementById('pubMsgs');if(!el)return;
+  const isMe=data.code===myCode;
+  const div=document.createElement('div');
+  div.className='pmrow'+(isMe?' me':'');
+  div.dataset.pubid=data.id;
+  const nick=esc(data.nick||data.code||'?');
+  const letter=nick[0].toUpperCase();
+  const time=hhmm(data.ts);
+  const avContent = data.avatar
+    ? `<img src="${data.avatar}" style="width:100%;height:100%;object-fit:cover;border-radius:7px">`
+    : letter;
+  let bubContent='';
+  if(data.img&&data.img!=='pending')
+    bubContent+=`<img src="${data.img}" style="max-width:100%;max-height:280px;border-radius:8px;display:block;cursor:pointer;margin-bottom:4px" onclick="openLightbox('${data.img.replace(/'/g,"\'")}')">`;
+  if(data.text) bubContent+=`<span>${renderText(data.text)}</span>`;
+  div.innerHTML=`
+    <div class="pmav${isMe?' me':''}">${avContent}</div>
+    <div class="pmbody">
+      <div class="pmnick">${nick}</div>
+      <div class="pmbub ${isMe?'me':'them'}">${bubContent}</div>
+      <div class="pmtime">${time}</div>
+    </div>`;
+  el.appendChild(div);
+  el.scrollTop=el.scrollHeight;
+}
+
+function pubLog(sysTxt,type,data) {
+  if(type==='sys'){
+    const el=document.getElementById('pubMsgs');if(!el)return;
+    const d=document.createElement('div');d.className='psys';d.textContent='— '+sysTxt+' —';
+    el.appendChild(d);el.scrollTop=el.scrollHeight;
+  }
+}
+
+function setPubDot(cls){const d=document.getElementById('pdot');if(d)d.className='pdot '+cls;}
+
+// Textarea del público
+document.addEventListener('DOMContentLoaded',()=>{
+  const ta=document.getElementById('pubTa');
+  if(ta){
+    ta.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();pubSend();}});
+    ta.addEventListener('input',()=>{ta.style.height='auto';ta.style.height=Math.min(ta.scrollHeight,100)+'px';});
+  }
+});
+
+// ── ADMIN ────────────────────────────────────────
+const ADMIN_PIN = '9445';
+let adminUnlocked = false;
+let bannedCodes = JSON.parse(localStorage.getItem('nc_banned') || '[]');
+
+function saveBanned() { localStorage.setItem('nc_banned', JSON.stringify(bannedCodes)); }
+
+function toggleAdminMenu() {
+  const menu  = document.getElementById('adminMenu');
+  const arrow = document.getElementById('adminArrow');
+  if (menu.classList.contains('open')) {
+    menu.classList.remove('open');
+    arrow.classList.add('closed');
+  } else {
+    menu.classList.add('open');
+    arrow.classList.remove('closed');
+    if (adminUnlocked) renderBanList();
+    else setTimeout(()=>document.getElementById('adminPinInput')?.focus(), 150);
+  }
+}
+
+// Cerrar admin con Escape
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    const menu = document.getElementById('adminMenu');
+    if (menu?.classList.contains('open')) {
+      menu.classList.remove('open');
+      const ar = document.getElementById('adminArrow'); if(ar) ar.classList.add('closed');
+    }
+  }
+});
+
+function checkAdminPin() {
+  const inp = document.getElementById('adminPinInput');
+  const err = document.getElementById('adminPinErr');
+  if (inp.value === ADMIN_PIN) {
+    adminUnlocked = true;
+    document.getElementById('adminPin').style.display   = 'none';
+    document.getElementById('adminPanel').style.display = 'block';
+    document.getElementById('adminBtn').classList.add('unlocked');
+    document.getElementById('adminBtn').textContent = '🛡 ADMIN';
+    inp.value = '';
+    err.style.display = 'none';
+    renderBanList();
+  } else {
+    err.style.display = 'block';
+    inp.value = '';
+    inp.focus();
+    // Shake animation
+    inp.style.animation = 'none';
+    inp.offsetHeight;
+    inp.style.borderColor = '#ff0040';
+    setTimeout(() => inp.style.borderColor = '', 1000);
+  }
+}
+
+function adminLock() {
+  adminUnlocked = false;
+  document.getElementById('adminPin').style.display   = 'block';
+  document.getElementById('adminPanel').style.display = 'none';
+  document.getElementById('adminBtn').classList.remove('unlocked');
+  document.getElementById('adminBtn').textContent = '🔒 ADMIN';
+  document.getElementById('adminMenu')?.classList.remove('open');
+  const ar = document.getElementById('adminArrow'); if(ar) ar.classList.add('closed');
+}
+
+function adminBan() {
+  const inp = document.getElementById('banInput');
+  const code = inp.value.trim();
+  if (!/^\d{4}$/.test(code)) { toast('Código inválido (4 dígitos)','bad'); return; }
+  if (code === myCode) { toast('No puedes banearte a ti mismo','bad'); return; }
+  if (bannedCodes.includes(code)) { toast('Ya está baneado','bad'); inp.value=''; return; }
+  bannedCodes.push(code);
+  saveBanned();
+  inp.value = '';
+  renderBanList();
+  toast('🚫 ' + code + ' baneado','ok');
+  // Echar de la sala pública si está conectado
+  pubConns.filter(c => c.peer === 'nc_'+code || c.peer === code).forEach(c => {
+    try { c.send({ type:'you_are_banned' }); c.close(); } catch {}
+  });
+}
+
+function adminUnban(code) {
+  bannedCodes = bannedCodes.filter(c => c !== code);
+  saveBanned();
+  renderBanList();
+  toast('✓ ' + code + ' desbaneado','ok');
+}
+
+function renderBanList() {
+  const el = document.getElementById('banList'); if (!el) return;
+  if (!bannedCodes.length) {
+    el.innerHTML = '<div class="adm-empty">Sin baneados</div>';
+    return;
+  }
+  el.innerHTML = bannedCodes.map(code => `
+    <div class="adm-item">
+      <span class="adm-item-code">🚫 ${esc(code)}</span>
+      <button class="adm-item-rm adm-unban" style="font-size:11px;padding:3px 8px;border-radius:5px"
+        onclick="adminUnban('${code}')">Desbanear</button>
+    </div>`).join('');
+}
+
+// Comprobar si un peer está baneado al recibir datos
+function isBanned(code) { return bannedCodes.includes(code); }
+
 // ── ARRANCAR ───────────────────────────────────
 document.getElementById('enterBtn').onclick=()=>{
   if (!libOk) { toast('PeerJS todavía cargando…'); return; }
@@ -869,6 +1495,7 @@ document.getElementById('enterBtn').onclick=()=>{
   document.getElementById('app').style.display='flex';
   document.getElementById('myid').textContent=myCode;
   const ns=document.getElementById('nickspan'); if(ns){ns.textContent=myNick||'Sin nombre'; ns.style.color='var(--acc)';}
+  updateMyAvBadge();
   loadChats(); renderList(); initPeer();
 };
 </script>
