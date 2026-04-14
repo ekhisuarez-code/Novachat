@@ -1203,6 +1203,14 @@ function hubAcceptClient(conn) {
       }
       if (!data.id) return;
       if (isBanned(data.code)) return;
+      // Admin remoto pide banear a alguien
+      if (data.type === 'admin_ban' && data.code) {
+        const targetPid = 'nc_' + data.code;
+        if (pubClients[targetPid]?.open) {
+          try { pubClients[targetPid].send({type:'you_are_banned'}); setTimeout(()=>pubClients[targetPid]?.close(),400); } catch {}
+        }
+        return;
+      }
       // Mostrar en el hub también
       pubAppendMsg(data);
       // Reenviar a TODOS los clientes (excepto el que lo envió)
@@ -1580,15 +1588,31 @@ function adminBan() {
   inp.value = '';
   renderBanList();
   toast('🚫 ' + code + ' baneado','ok');
-  // Echar de la sala pública Y del chat privado si está conectado
+
   const banPid = 'nc_' + code;
-  // Sala pública
-  pubConns.filter(c => c.peer === banPid).forEach(c => {
-    try { c.send({ type:'you_are_banned' }); setTimeout(()=>c.close(),300); } catch {}
-  });
-  // Chat privado
+
+  // ── Sala pública (hub-and-spoke) ──
+  // Si soy el hub, el usuario baneado está en pubClients
+  if (pubIsHub && pubClients[banPid]?.open) {
+    try {
+      pubClients[banPid].send({ type:'you_are_banned' });
+      setTimeout(() => { try { pubClients[banPid]?.close(); } catch {} }, 400);
+    } catch {}
+  }
+  // Si soy cliente y hay hub, pedirle al hub que banee
+  // (el hub lo hará automáticamente cuando intente reconectar porque isBanned devuelve true)
+  // También cerrar mi propia conexión con ese peer si existe
+  if (!pubIsHub && pubHubConn?.open) {
+    // Notificar al hub para que eche al baneado
+    try { pubHubConn.send({ type:'admin_ban', code }); } catch {}
+  }
+
+  // ── Chat privado (CONNS) ──
   if (CONNS[banPid]?.open) {
-    try { CONNS[banPid].send({ type:'you_are_banned' }); setTimeout(()=>CONNS[banPid]?.close(),300); } catch {}
+    try {
+      CONNS[banPid].send({ type:'you_are_banned' });
+      setTimeout(() => { try { CONNS[banPid]?.close(); } catch {} }, 400);
+    } catch {}
   }
 }
 
