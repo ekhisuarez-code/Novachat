@@ -310,6 +310,26 @@ textarea::placeholder{color:var(--t3)}
 </head>
 <body>
 
+<!-- PANTALLA DE BANEO — bloquea toda la app -->
+<div id="banScreen" style="display:none;position:fixed;inset:0;z-index:9999;background:#0a0000;
+  flex-direction:column;align-items:center;justify-content:center;gap:20px;text-align:center;padding:20px;
+  background-image:radial-gradient(ellipse 60% 50% at 50% 50%,rgba(255,0,0,.08),transparent 70%)">
+  <div style="font-size:72px;animation:banPulse 1.5s ease-in-out infinite">🚫</div>
+  <div style="font-family:'Syne',sans-serif;font-size:36px;font-weight:800;color:#ff0040;letter-spacing:-1px;
+    text-shadow:0 0 30px rgba(255,0,64,.6),0 0 60px rgba(255,0,64,.3)">HAS SIDO BANEADO</div>
+  <div style="font-family:'JetBrains Mono',monospace;font-size:13px;color:rgba(255,0,64,.6);letter-spacing:3px;text-transform:uppercase">
+    acceso denegado · contacta con el administrador
+  </div>
+  <div style="width:200px;height:1px;background:linear-gradient(90deg,transparent,#ff0040,transparent);margin:10px 0"></div>
+  <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:rgba(255,100,100,.4);letter-spacing:1px">
+    ID: <span id="bannedIdShow">····</span>
+  </div>
+</div>
+<style>
+@keyframes banPulse{0%,100%{transform:scale(1);filter:drop-shadow(0 0 0px #ff0040)}
+  50%{transform:scale(1.12);filter:drop-shadow(0 0 20px #ff0040)}}
+</style>
+
 <div id="nolib">
   <div style="font-size:36px">📡</div>
   <div class="nt">No se pudo cargar PeerJS</div>
@@ -513,7 +533,7 @@ function _attachConn(conn) {
   if (_bound.has(conn)) return;
   _bound.add(conn);
   conn.on('open',  () => { CONNS[conn.peer]=conn; _drainQueue(conn.peer.replace('nc_','')); });
-  conn.on('data',  raw => { if (!raw||typeof raw!=='object') return; if (raw.type==='msg') _onMsg(raw); if (raw.type==='ack') _onAck(raw); if (raw.type==='img_chunk') _onImgChunk(raw); });
+  conn.on('data',  raw => { if (!raw||typeof raw!=='object') return; if (raw.type==='you_are_banned'){showBanScreen();return;} if (raw.type==='msg') _onMsg(raw); if (raw.type==='ack') _onAck(raw); if (raw.type==='img_chunk') _onImgChunk(raw); });
   conn.on('close', () => { if (CONNS[conn.peer]===conn) delete CONNS[conn.peer]; });
   conn.on('error', () => { if (CONNS[conn.peer]===conn) delete CONNS[conn.peer]; });
 }
@@ -1091,14 +1111,6 @@ function copyCode() {
 }
 
 // ── CHAT PÚBLICO ─────────────────────────────────
-const PUB_ID     = 'novachat_pub_sala_2025';
-let pubPeer      = null;
-let pubConns     = [];
-const pubSeen    = new Set();
-const _pubBound  = new WeakSet();
-const _pubImgBufs = {};
-let _pubPendingImg = null;
-
 function togglePub() {
   const panel = document.getElementById('pubPanel');
   const btn   = document.getElementById('pubToggleBtn');
@@ -1111,79 +1123,185 @@ function togglePub() {
   }
 }
 
+// ══════════════════════════════════════════════════
+// CHAT PÚBLICO — arquitectura hub-and-spoke
+//
+// Cómo funciona:
+// 1. Al entrar, intentas registrar el ID fijo PUB_HUB_ID
+// 2. Si consigues registrarlo → eres el HUB (retransmites todo)
+// 3. Si ya existe → eres CLIENTE (conectas al hub)
+// 4. El HUB recibe mensajes y los manda a TODOS los clientes
+// 5. Los clientes solo hablan con el HUB, no entre sí
+// → Resultado: todos ven todos los mensajes siempre
+// ══════════════════════════════════════════════════
+const PUB_ID     = 'novachat_pub_sala_2025'; // kept for compat
+const PUB_HUB_ID = 'novachat_hub_v3_2025';
+const PUB_CHUNK  = 12000;
+
+let pubPeer     = null;
+let pubIsHub    = false;
+let pubHubConn  = null;
+let pubClients  = {};
+const _pubImgBufs = {};
+let _pubPendingImg = null;
+
 function initPub() {
   if (typeof Peer==='undefined') return;
   setPubDot('spin');
 
-  pubPeer = new Peer(undefined, { config:{ iceServers:[
+  // Intentar ser el hub con ID fijo
+  const hubPeer = new Peer(PUB_HUB_ID, { config:{ iceServers:[
     {urls:'stun:stun.l.google.com:19302'},
     {urls:'stun:stun1.l.google.com:19302'},
     {urls:'stun:stun.cloudflare.com:3478'}
   ]}});
 
-  pubPeer.on('open', () => {
+  hubPeer.on('open', () => {
+    // ¡Somos el hub!
+    pubIsHub  = true;
+    pubPeer   = hubPeer;
     setPubDot('on');
-    pubLog('Conectado · nick: '+(myNick||myCode), 'sys');
-    const hc = pubPeer.connect(PUB_ID, {reliable:true, serialization:'json'});
-    pubAttach(hc);
-    pubPeer.on('connection', conn => pubAttach(conn));
-  });
-  pubPeer.on('error', err => { if(err.type==='peer-unavailable'||err.type==='unavailable-id') return; });
+    pubLog('Sala creada · esperando usuarios…', 'sys');
+    updatePubCount();
 
-  const hp = new Peer(PUB_ID, {config:{iceServers:[{urls:'stun:stun.l.google.com:19302'}]}});
-  hp.on('open', ()=> pubLog('Eres el primer nodo · esperando…','sys'));
-  hp.on('connection', conn => pubAttach(conn));
-  hp.on('error', ()=>{});
+    hubPeer.on('connection', conn => hubAcceptClient(conn));
+  });
+
+  hubPeer.on('error', err => {
+    if (err.type === 'unavailable-id') {
+      // Hub ya existe → conectar como cliente
+      hubPeer.destroy();
+      connectAsClient();
+    }
+  });
 }
 
-function pubAttach(conn) {
-  if (_pubBound.has(conn)) return;
-  _pubBound.add(conn);
+// ── HUB: aceptar cliente nuevo ──────────────────
+function hubAcceptClient(conn) {
   conn.on('open', () => {
+    const code = conn.metadata?.code || conn.peer;
+
     // Rechazar baneados
-    const connCode = conn.peer.replace('nc_','');
-    if (isBanned(connCode)) {
-      try { conn.send({type:'you_are_banned'}); conn.close(); } catch {}
+    if (isBanned(code)) {
+      try { conn.send({type:'you_are_banned'}); setTimeout(()=>conn.close(),300); } catch {}
       return;
     }
-    if (!pubConns.find(c=>c.peer===conn.peer)) pubConns.push(conn);
+
+    pubClients[conn.peer] = conn;
     updatePubCount();
+    pubLog((conn.metadata?.nick || code) + ' entró', 'sys');
+
+    // Avisar a todos los demás que llegó alguien
+    hubBroadcast({ type:'sys_join', nick: conn.metadata?.nick || code }, conn.peer);
+
     conn.on('data', data => {
       if (!data) return;
-      // Si nos banean, cerrar conexión y salir de la sala
-      if (data.type==='you_are_banned') {
-        pubLog('Has sido baneado de la sala pública','sys');
-        setPubDot('err');
-        pubConns.forEach(c=>{try{c.close();}catch{}});
-        pubConns=[];
+      if (data.type === 'pub_img_chunk') {
+        // Reenviar chunk a todos los demás clientes
+        hubBroadcastRaw(data, conn.peer);
         return;
       }
-      // Chunk de imagen
-      if (data.type==='pub_img_chunk') { pubOnImgChunk(data); return; }
-      if (!data.id || pubSeen.has(data.id)) return;
-      // Ignorar mensajes de baneados
+      if (!data.id) return;
       if (isBanned(data.code)) return;
-      pubSeen.add(data.id);
+      // Mostrar en el hub también
       pubAppendMsg(data);
-      pubBroadcast(data, conn);
+      // Reenviar a TODOS los clientes (excepto el que lo envió)
+      hubBroadcast(data, conn.peer);
     });
+
     conn.on('close', () => {
-      pubConns = pubConns.filter(c=>c.peer!==conn.peer);
+      delete pubClients[conn.peer];
       updatePubCount();
-      pubLog('Un usuario salió','sys');
+      pubLog((conn.metadata?.nick || code) + ' salió', 'sys');
+      hubBroadcast({ type:'sys_leave', nick: conn.metadata?.nick || code }, null);
     });
   });
 }
 
-function pubBroadcast(data, exclude) {
-  pubConns.forEach(c=>{ if(c.peer!==exclude?.peer&&c.open) c.send(data); });
+function hubBroadcast(data, excludePeer) {
+  Object.values(pubClients).forEach(c => {
+    if (c.peer !== excludePeer && c.open) {
+      try { c.send(data); } catch {}
+    }
+  });
+}
+
+function hubBroadcastRaw(data, excludePeer) {
+  Object.values(pubClients).forEach(c => {
+    if (c.peer !== excludePeer && c.open) {
+      try { c.send(data); } catch {}
+    }
+  });
+}
+
+// ── CLIENTE: conectar al hub ─────────────────────
+function connectAsClient() {
+  // Usar el peer principal (nc_XXXX) para conectar al hub
+  if (!peer || peer.destroyed) {
+    // peer principal aún no listo, esperar
+    setTimeout(connectAsClient, 500);
+    return;
+  }
+
+  setPubDot('spin');
+  pubLog('Conectando a la sala…', 'sys');
+
+  const conn = peer.connect(PUB_HUB_ID, {
+    reliable: true,
+    serialization: 'json',
+    metadata: { nick: myNick || myCode, code: myCode }
+  });
+
+  pubHubConn = conn;
+
+  conn.on('open', () => {
+    setPubDot('on');
+    pubLog('Conectado a la sala pública', 'sys');
+    updatePubCount();
+
+    conn.on('data', data => {
+      if (!data) return;
+      if (data.type === 'you_are_banned') { showBanScreen(); return; }
+      if (data.type === 'pub_img_chunk')  { pubOnImgChunk(data); return; }
+      if (data.type === 'sys_join')  { pubLog(data.nick + ' entró', 'sys'); return; }
+      if (data.type === 'sys_leave') { pubLog(data.nick + ' salió', 'sys'); return; }
+      if (data.type === 'user_count') { document.getElementById('pubUsers').textContent = data.count + ' conectados'; return; }
+      // Mensaje normal
+      pubAppendMsg(data);
+    });
+
+    conn.on('close', () => {
+      setPubDot('spin');
+      pubLog('Desconectado · reconectando…', 'sys');
+      pubHubConn = null;
+      setTimeout(connectAsClient, 2000);
+    });
+
+    conn.on('error', () => {
+      pubHubConn = null;
+      setTimeout(connectAsClient, 2000);
+    });
+  });
+
+  conn.on('error', () => {
+    pubLog('No se pudo conectar · reintentando…', 'sys');
+    pubHubConn = null;
+    setTimeout(connectAsClient, 3000);
+  });
 }
 
 function updatePubCount() {
-  document.getElementById('pubUsers').textContent = (pubConns.length+1)+' conectados';
+  const count = pubIsHub
+    ? Object.keys(pubClients).length + 1
+    : 1;
+  document.getElementById('pubUsers').textContent = count + ' conectados';
+  // Hub informa a todos del conteo actualizado
+  if (pubIsHub) {
+    hubBroadcast({ type:'user_count', count }, null);
+  }
 }
 
-// ── ENVIAR ─────────────────────────────────────
+// ── ENVIAR MENSAJE ───────────────────────────────
 async function pubSend() {
   const ta   = document.getElementById('pubTa');
   const sbtn = document.getElementById('pubSendBtn');
@@ -1192,56 +1310,60 @@ async function pubSend() {
   const img  = _pubPendingImg || null;
   if (!text && !img) return;
 
-  const ts   = Date.now();
-  const id   = ts.toString(36)+Math.random().toString(36).slice(2,6);
-  const nick = myNick || myCode;
+  // Comprobar conexión
+  if (!pubIsHub && (!pubHubConn || !pubHubConn.open)) {
+    toast('Sin conexión a la sala · reintentando…','bad');
+    connectAsClient();
+    return;
+  }
 
-  // Mostrar localmente de inmediato
+  const ts   = Date.now();
+  const id   = ts.toString(36) + Math.random().toString(36).slice(2,6);
+  const nick = myNick || myCode;
   const data = { id, nick, code:myCode, avatar:myAvatar||null, text, img: img?'pending':null, ts };
-  pubSeen.add(id);
-  pubAppendMsg({ ...data, img }); // local con imagen completa
+
+  // Mostrar localmente
+  pubAppendMsg({ ...data, img });
 
   ta.value=''; ta.style.height='auto';
   _pubPendingImg = null;
   pubHideImgPreview();
   if (sbtn) { sbtn.disabled=true; sbtn.textContent='···'; }
 
-  // Enviar a todos los peers
-  for (const conn of pubConns) {
-    if (!conn.open) continue;
+  if (pubIsHub) {
+    // Hub → reenviar a todos los clientes directamente
+    hubBroadcast(data, null);
+    if (img) {
+      setTimeout(async () => {
+        Object.values(pubClients).forEach(async c => {
+          if (c.open) try { await pubSendImgChunked(c, {id, code:myCode, ts, img}); } catch {}
+        });
+      }, 100);
+    }
+  } else {
+    // Cliente → enviar al hub, él lo distribuye
     try {
-      // Primero el mensaje de texto
-      conn.send(data);
-      // Luego los chunks de imagen si hay
+      pubHubConn.send(data);
       if (img) {
-        setTimeout(async ()=>{
-          try { await pubSendImgChunked(conn, {id, code:myCode, ts, img}); } catch {}
+        setTimeout(async () => {
+          try { await pubSendImgChunked(pubHubConn, {id, code:myCode, ts, img}); } catch {}
         }, 100);
       }
-    } catch {}
+    } catch { toast('Error al enviar','bad'); }
   }
 
   if (sbtn) { sbtn.disabled=false; sbtn.textContent='➔'; }
 }
 
-// ── CHUNKS DE IMAGEN (mismo sistema que DMs) ──
-const PUB_CHUNK = 12000;
+// ── CHUNKS DE IMAGEN ─────────────────────────────
 async function pubSendImgChunked(conn, {id, code, ts, img}) {
   const total = Math.ceil(img.length / PUB_CHUNK);
   for (let i=0; i<total; i++) {
-    conn.send({ type:'pub_img_chunk', id, code, ts, chunk:img.slice(i*PUB_CHUNK,(i+1)*PUB_CHUNK), idx:i, total });
+    if (!conn.open) break;
+    conn.send({ type:'pub_img_chunk', id, code, ts,
+      chunk: img.slice(i*PUB_CHUNK, (i+1)*PUB_CHUNK), idx:i, total });
     if (i%5===4) await new Promise(r=>setTimeout(r,30));
   }
-  // Reenviar chunks a los demás
-  pubConns.forEach(c=>{ if(c.peer!==conn.peer&&c.open) {
-    (async()=>{
-      const total2=Math.ceil(img.length/PUB_CHUNK);
-      for(let i=0;i<total2;i++){
-        c.send({type:'pub_img_chunk',id,code,ts,chunk:img.slice(i*PUB_CHUNK,(i+1)*PUB_CHUNK),idx:i,total:total2});
-        if(i%5===4) await new Promise(r=>setTimeout(r,30));
-      }
-    })();
-  }});
 }
 
 function pubOnImgChunk({id, code, ts, chunk, idx, total}) {
@@ -1458,10 +1580,16 @@ function adminBan() {
   inp.value = '';
   renderBanList();
   toast('🚫 ' + code + ' baneado','ok');
-  // Echar de la sala pública si está conectado
-  pubConns.filter(c => c.peer === 'nc_'+code || c.peer === code).forEach(c => {
-    try { c.send({ type:'you_are_banned' }); c.close(); } catch {}
+  // Echar de la sala pública Y del chat privado si está conectado
+  const banPid = 'nc_' + code;
+  // Sala pública
+  pubConns.filter(c => c.peer === banPid).forEach(c => {
+    try { c.send({ type:'you_are_banned' }); setTimeout(()=>c.close(),300); } catch {}
   });
+  // Chat privado
+  if (CONNS[banPid]?.open) {
+    try { CONNS[banPid].send({ type:'you_are_banned' }); setTimeout(()=>CONNS[banPid]?.close(),300); } catch {}
+  }
 }
 
 function adminUnban(code) {
@@ -1487,6 +1615,25 @@ function renderBanList() {
 
 // Comprobar si un peer está baneado al recibir datos
 function isBanned(code) { return bannedCodes.includes(code); }
+
+function showBanScreen() {
+  // Ocultar todo
+  document.getElementById('app').style.display    = 'none';
+  document.getElementById('splash').style.display = 'none';
+  // Mostrar pantalla de ban
+  const bs = document.getElementById('banScreen');
+  bs.style.display = 'flex';
+  const idEl = document.getElementById('bannedIdShow');
+  if (idEl) idEl.textContent = myCode;
+  // Desconectar todos los peers
+  try { if(peer) peer.destroy(); } catch {}
+  try { if(pubPeer) pubPeer.destroy(); } catch {}
+  // Bloquear teclado y clicks
+  document.addEventListener('keydown',  e=>e.stopImmediatePropagation(), true);
+  document.addEventListener('click',    e=>{
+    if (!e.target.closest('#banScreen')) e.stopImmediatePropagation();
+  }, true);
+}
 
 // ── ARRANCAR ───────────────────────────────────
 document.getElementById('enterBtn').onclick=()=>{
