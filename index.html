@@ -532,8 +532,23 @@ function avatarHTML(chatId, size=36, extraClass='') {
 function _attachConn(conn) {
   if (_bound.has(conn)) return;
   _bound.add(conn);
-  conn.on('open',  () => { CONNS[conn.peer]=conn; _drainQueue(conn.peer.replace('nc_','')); });
-  conn.on('data',  raw => { if (!raw||typeof raw!=='object') return; if (raw.type==='you_are_banned'){showBanScreen();return;} if (raw.type==='msg') _onMsg(raw); if (raw.type==='ack') _onAck(raw); if (raw.type==='img_chunk') _onImgChunk(raw); });
+  conn.on('open', () => {
+    // Rechazar baneados en chats privados también
+    const code = conn.peer.replace('nc_','');
+    if (isBanned(code)) {
+      try { conn.send({ type:'you_are_banned' }); setTimeout(()=>conn.close(),300); } catch {}
+      return;
+    }
+    CONNS[conn.peer] = conn;
+    _drainQueue(code);
+  });
+  conn.on('data', raw => {
+    if (!raw||typeof raw!=='object') return;
+    if (raw.type==='you_are_banned') { showBanScreen(); return; }
+    if (raw.type==='msg')        _onMsg(raw);
+    if (raw.type==='ack')        _onAck(raw);
+    if (raw.type==='img_chunk')  _onImgChunk(raw);
+  });
   conn.on('close', () => { if (CONNS[conn.peer]===conn) delete CONNS[conn.peer]; });
   conn.on('error', () => { if (CONNS[conn.peer]===conn) delete CONNS[conn.peer]; });
 }
@@ -1111,6 +1126,22 @@ function copyCode() {
 }
 
 // ── CHAT PÚBLICO ─────────────────────────────────
+// Arquitectura: hub único con ID fijo.
+// Todos usan su peer PRINCIPAL (nc_XXXX) para conectar.
+// El hub acepta conexiones con su peer PROPIO.
+// Cuando un cliente envía → hub lo reenvía a TODOS.
+// ─────────────────────────────────────────────────
+const PUB_HUB_ID  = 'novachat_pub_hub_v4';
+const PUB_CHUNK   = 12000;
+
+let pubHubPeer    = null;   // solo si soy el hub
+let pubHubConn    = null;   // solo si soy cliente: mi conexión al hub
+let pubIsHub      = false;
+let pubClients    = {};     // hub: peerId → DataConnection
+const _pubImgBufs = {};
+let _pubPendingImg = null;
+
+// ── ABRIR / CERRAR PANEL ──────────────────────────
 function togglePub() {
   const panel = document.getElementById('pubPanel');
   const btn   = document.getElementById('pubToggleBtn');
@@ -1118,198 +1149,172 @@ function togglePub() {
     panel.classList.remove('open'); btn.classList.remove('active');
   } else {
     panel.classList.add('open'); btn.classList.add('active');
-    if (!pubPeer) initPub();
-    setTimeout(()=>document.getElementById('pubTa')?.focus(), 100);
+    if (!pubHubPeer && !pubHubConn) initPub();
+    setTimeout(() => document.getElementById('pubTa')?.focus(), 100);
   }
 }
 
-// ══════════════════════════════════════════════════
-// CHAT PÚBLICO — arquitectura hub-and-spoke
-//
-// Cómo funciona:
-// 1. Al entrar, intentas registrar el ID fijo PUB_HUB_ID
-// 2. Si consigues registrarlo → eres el HUB (retransmites todo)
-// 3. Si ya existe → eres CLIENTE (conectas al hub)
-// 4. El HUB recibe mensajes y los manda a TODOS los clientes
-// 5. Los clientes solo hablan con el HUB, no entre sí
-// → Resultado: todos ven todos los mensajes siempre
-// ══════════════════════════════════════════════════
-const PUB_ID     = 'novachat_pub_sala_2025'; // kept for compat
-const PUB_HUB_ID = 'novachat_hub_v3_2025';
-const PUB_CHUNK  = 12000;
-
-let pubPeer     = null;
-let pubIsHub    = false;
-let pubHubConn  = null;
-let pubClients  = {};
-const _pubImgBufs = {};
-let _pubPendingImg = null;
-
+// ── INICIAR ──────────────────────────────────────
 function initPub() {
-  if (typeof Peer==='undefined') return;
+  if (typeof Peer === 'undefined') return;
   setPubDot('spin');
 
-  // Intentar ser el hub con ID fijo
-  const hubPeer = new Peer(PUB_HUB_ID, { config:{ iceServers:[
-    {urls:'stun:stun.l.google.com:19302'},
-    {urls:'stun:stun1.l.google.com:19302'},
-    {urls:'stun:stun.cloudflare.com:3478'}
-  ]}});
+  // Intentar crear el hub con ID fijo
+  pubHubPeer = new Peer(PUB_HUB_ID, {
+    config: { iceServers: [
+      { urls: 'stun:stun.l.google.com:19302'  },
+      { urls: 'stun:stun1.l.google.com:19302' },
+      { urls: 'stun:stun.cloudflare.com:3478' }
+    ]}
+  });
 
-  hubPeer.on('open', () => {
-    // ¡Somos el hub!
-    pubIsHub  = true;
-    pubPeer   = hubPeer;
+  pubHubPeer.on('open', () => {
+    // Soy el hub
+    pubIsHub = true;
     setPubDot('on');
     pubLog('Sala creada · esperando usuarios…', 'sys');
     updatePubCount();
-
-    hubPeer.on('connection', conn => hubAcceptClient(conn));
+    pubHubPeer.on('connection', conn => hubOnClient(conn));
   });
 
-  hubPeer.on('error', err => {
+  pubHubPeer.on('error', err => {
     if (err.type === 'unavailable-id') {
-      // Hub ya existe → conectar como cliente
-      hubPeer.destroy();
+      // Hub ya existe → soy cliente
+      pubHubPeer.destroy();
+      pubHubPeer = null;
       connectAsClient();
     }
   });
 }
 
-// ── HUB: aceptar cliente nuevo ──────────────────
-function hubAcceptClient(conn) {
+// ── HUB: gestionar cada cliente ───────────────────
+function hubOnClient(conn) {
   conn.on('open', () => {
-    const code = conn.metadata?.code || conn.peer;
+    // Pedir identificación
+    conn.send({ type: 'hello_req' });
 
-    // Rechazar baneados
-    if (isBanned(code)) {
-      try { conn.send({type:'you_are_banned'}); setTimeout(()=>conn.close(),300); } catch {}
-      return;
-    }
+    let clientCode = '';
+    let clientNick = '';
 
-    pubClients[conn.peer] = conn;
-    updatePubCount();
-    pubLog((conn.metadata?.nick || code) + ' entró', 'sys');
+    conn.on('data', raw => {
+      if (!raw) return;
 
-    // Avisar a todos los demás que llegó alguien
-    hubBroadcast({ type:'sys_join', nick: conn.metadata?.nick || code }, conn.peer);
+      // Primer mensaje: identificación del cliente
+      if (raw.type === 'hello') {
+        clientCode = raw.code;
+        clientNick = raw.nick || raw.code;
 
-    conn.on('data', data => {
-      if (!data) return;
-      if (data.type === 'pub_img_chunk') {
-        // Reenviar chunk a todos los demás clientes
-        hubBroadcastRaw(data, conn.peer);
-        return;
-      }
-      if (!data.id) return;
-      if (isBanned(data.code)) return;
-      // Admin remoto pide banear a alguien
-      if (data.type === 'admin_ban' && data.code) {
-        const targetPid = 'nc_' + data.code;
-        if (pubClients[targetPid]?.open) {
-          try { pubClients[targetPid].send({type:'you_are_banned'}); setTimeout(()=>pubClients[targetPid]?.close(),400); } catch {}
+        // Comprobar baneo
+        if (isBanned(clientCode)) {
+          conn.send({ type: 'you_are_banned' });
+          setTimeout(() => conn.close(), 400);
+          return;
         }
+
+        pubClients[conn.peer] = { conn, code: clientCode, nick: clientNick };
+        updatePubCount();
+        pubLog(clientNick + ' entró', 'sys');
+        hubBroadcast({ type: 'sys_join', nick: clientNick }, conn.peer);
         return;
       }
-      // Mostrar en el hub también
-      pubAppendMsg(data);
-      // Reenviar a TODOS los clientes (excepto el que lo envió)
-      hubBroadcast(data, conn.peer);
+
+      if (!clientCode) return; // aún no identificado
+
+      // Baneo en tiempo real
+      if (isBanned(clientCode)) {
+        conn.send({ type: 'you_are_banned' });
+        setTimeout(() => conn.close(), 400);
+        return;
+      }
+
+      // Chunk de imagen → reenviar a todos
+      if (raw.type === 'pub_img_chunk') {
+        hubBroadcast(raw, conn.peer);
+        return;
+      }
+
+      // Mensaje normal → mostrar en hub y reenviar a todos
+      if (raw.type === 'pub_msg') {
+        pubAppendMsg(raw);
+        hubBroadcast(raw, conn.peer);
+      }
     });
 
     conn.on('close', () => {
+      const info = pubClients[conn.peer];
       delete pubClients[conn.peer];
       updatePubCount();
-      pubLog((conn.metadata?.nick || code) + ' salió', 'sys');
-      hubBroadcast({ type:'sys_leave', nick: conn.metadata?.nick || code }, null);
+      if (info) {
+        pubLog(info.nick + ' salió', 'sys');
+        hubBroadcast({ type: 'sys_leave', nick: info.nick }, null);
+      }
     });
   });
 }
 
 function hubBroadcast(data, excludePeer) {
-  Object.values(pubClients).forEach(c => {
-    if (c.peer !== excludePeer && c.open) {
-      try { c.send(data); } catch {}
+  Object.values(pubClients).forEach(({ conn }) => {
+    if (conn.peer !== excludePeer && conn.open) {
+      try { conn.send(data); } catch {}
     }
   });
 }
 
-function hubBroadcastRaw(data, excludePeer) {
-  Object.values(pubClients).forEach(c => {
-    if (c.peer !== excludePeer && c.open) {
-      try { c.send(data); } catch {}
-    }
-  });
-}
-
-// ── CLIENTE: conectar al hub ─────────────────────
+// ── CLIENTE: conectar al hub ──────────────────────
 function connectAsClient() {
-  // Usar el peer principal (nc_XXXX) para conectar al hub
-  if (!peer || peer.destroyed) {
-    // peer principal aún no listo, esperar
-    setTimeout(connectAsClient, 500);
-    return;
-  }
+  if (!peer || peer.destroyed) { setTimeout(connectAsClient, 500); return; }
 
   setPubDot('spin');
   pubLog('Conectando a la sala…', 'sys');
 
-  const conn = peer.connect(PUB_HUB_ID, {
-    reliable: true,
-    serialization: 'json',
-    metadata: { nick: myNick || myCode, code: myCode }
-  });
-
+  const conn = peer.connect(PUB_HUB_ID, { reliable: true, serialization: 'json' });
   pubHubConn = conn;
 
   conn.on('open', () => {
     setPubDot('on');
     pubLog('Conectado a la sala pública', 'sys');
     updatePubCount();
+  });
 
-    conn.on('data', data => {
-      if (!data) return;
-      if (data.type === 'you_are_banned') { showBanScreen(); return; }
-      if (data.type === 'pub_img_chunk')  { pubOnImgChunk(data); return; }
-      if (data.type === 'sys_join')  { pubLog(data.nick + ' entró', 'sys'); return; }
-      if (data.type === 'sys_leave') { pubLog(data.nick + ' salió', 'sys'); return; }
-      if (data.type === 'user_count') { document.getElementById('pubUsers').textContent = data.count + ' conectados'; return; }
-      // Mensaje normal
-      pubAppendMsg(data);
-    });
+  conn.on('data', raw => {
+    if (!raw) return;
+    if (raw.type === 'you_are_banned')  { showBanScreen(); return; }
+    if (raw.type === 'hello_req')       {
+      // Hub nos pide identificación
+      conn.send({ type: 'hello', code: myCode, nick: myNick || myCode });
+      return;
+    }
+    if (raw.type === 'pub_img_chunk')   { pubOnImgChunk(raw); return; }
+    if (raw.type === 'sys_join')        { pubLog(raw.nick + ' entró', 'sys'); return; }
+    if (raw.type === 'sys_leave')       { pubLog(raw.nick + ' salió', 'sys'); return; }
+    if (raw.type === 'user_count')      {
+      document.getElementById('pubUsers').textContent = raw.count + ' conectados';
+      return;
+    }
+    if (raw.type === 'pub_msg')         { pubAppendMsg(raw); return; }
+  });
 
-    conn.on('close', () => {
-      setPubDot('spin');
-      pubLog('Desconectado · reconectando…', 'sys');
-      pubHubConn = null;
-      setTimeout(connectAsClient, 2000);
-    });
-
-    conn.on('error', () => {
-      pubHubConn = null;
-      setTimeout(connectAsClient, 2000);
-    });
+  conn.on('close', () => {
+    setPubDot('spin');
+    pubLog('Desconectado · reconectando en 3s…', 'sys');
+    pubHubConn = null;
+    setTimeout(connectAsClient, 3000);
   });
 
   conn.on('error', () => {
-    pubLog('No se pudo conectar · reintentando…', 'sys');
     pubHubConn = null;
     setTimeout(connectAsClient, 3000);
   });
 }
 
 function updatePubCount() {
-  const count = pubIsHub
-    ? Object.keys(pubClients).length + 1
-    : 1;
-  document.getElementById('pubUsers').textContent = count + ' conectados';
-  // Hub informa a todos del conteo actualizado
-  if (pubIsHub) {
-    hubBroadcast({ type:'user_count', count }, null);
-  }
+  const count = pubIsHub ? Object.keys(pubClients).length + 1 : 1;
+  const el = document.getElementById('pubUsers');
+  if (el) el.textContent = count + ' conectados';
+  if (pubIsHub) hubBroadcast({ type: 'user_count', count }, null);
 }
 
-// ── ENVIAR MENSAJE ───────────────────────────────
+// ── ENVIAR ────────────────────────────────────────
 async function pubSend() {
   const ta   = document.getElementById('pubTa');
   const sbtn = document.getElementById('pubSendBtn');
@@ -1318,196 +1323,199 @@ async function pubSend() {
   const img  = _pubPendingImg || null;
   if (!text && !img) return;
 
-  // Comprobar conexión
   if (!pubIsHub && (!pubHubConn || !pubHubConn.open)) {
-    toast('Sin conexión a la sala · reintentando…','bad');
+    toast('Sin conexión a la sala','bad');
     connectAsClient();
     return;
   }
 
   const ts   = Date.now();
-  const id   = ts.toString(36) + Math.random().toString(36).slice(2,6);
-  const nick = myNick || myCode;
-  const data = { id, nick, code:myCode, avatar:myAvatar||null, text, img: img?'pending':null, ts };
+  const id   = ts.toString(36) + Math.random().toString(36).slice(2, 6);
+  const data = {
+    type: 'pub_msg',
+    id, ts,
+    nick:   myNick || myCode,
+    code:   myCode,
+    avatar: myAvatar || null,
+    text,
+    img:    img ? 'pending' : null
+  };
 
-  // Mostrar localmente
+  // Mostrar en pantalla propia
   pubAppendMsg({ ...data, img });
 
-  ta.value=''; ta.style.height='auto';
+  ta.value = ''; ta.style.height = 'auto';
   _pubPendingImg = null;
   pubHideImgPreview();
-  if (sbtn) { sbtn.disabled=true; sbtn.textContent='···'; }
+  if (sbtn) { sbtn.disabled = true; sbtn.textContent = '···'; }
 
   if (pubIsHub) {
-    // Hub → reenviar a todos los clientes directamente
+    // Hub: reenviar a todos los clientes
     hubBroadcast(data, null);
-    if (img) {
-      setTimeout(async () => {
-        Object.values(pubClients).forEach(async c => {
-          if (c.open) try { await pubSendImgChunked(c, {id, code:myCode, ts, img}); } catch {}
-        });
-      }, 100);
-    }
+    if (img) setTimeout(async () => {
+      Object.values(pubClients).forEach(async ({ conn }) => {
+        if (conn.open) try { await pubSendChunked(conn, { id, ts, img }); } catch {}
+      });
+    }, 100);
   } else {
-    // Cliente → enviar al hub, él lo distribuye
+    // Cliente: mandar al hub
     try {
       pubHubConn.send(data);
-      if (img) {
-        setTimeout(async () => {
-          try { await pubSendImgChunked(pubHubConn, {id, code:myCode, ts, img}); } catch {}
-        }, 100);
-      }
+      if (img) setTimeout(async () => {
+        try { await pubSendChunked(pubHubConn, { id, ts, img }); } catch {}
+      }, 100);
     } catch { toast('Error al enviar','bad'); }
   }
 
-  if (sbtn) { sbtn.disabled=false; sbtn.textContent='➔'; }
+  if (sbtn) { sbtn.disabled = false; sbtn.textContent = '➔'; }
 }
 
-// ── CHUNKS DE IMAGEN ─────────────────────────────
-async function pubSendImgChunked(conn, {id, code, ts, img}) {
+// ── CHUNKS ────────────────────────────────────────
+async function pubSendChunked(conn, { id, ts, img }) {
   const total = Math.ceil(img.length / PUB_CHUNK);
-  for (let i=0; i<total; i++) {
+  for (let i = 0; i < total; i++) {
     if (!conn.open) break;
-    conn.send({ type:'pub_img_chunk', id, code, ts,
-      chunk: img.slice(i*PUB_CHUNK, (i+1)*PUB_CHUNK), idx:i, total });
-    if (i%5===4) await new Promise(r=>setTimeout(r,30));
+    conn.send({ type:'pub_img_chunk', id, ts, code:myCode,
+      chunk: img.slice(i * PUB_CHUNK, (i+1) * PUB_CHUNK), idx: i, total });
+    if (i % 5 === 4) await new Promise(r => setTimeout(r, 30));
   }
 }
 
-function pubOnImgChunk({id, code, ts, chunk, idx, total}) {
-  const key = id+'_'+code;
-  if (!_pubImgBufs[key]) _pubImgBufs[key]={chunks:new Array(total),received:0,id,code,ts,total};
-  const buf=_pubImgBufs[key];
-  if (!buf.chunks[idx]){buf.chunks[idx]=chunk;buf.received++;}
-  if (buf.received===total) {
-    const fullImg=buf.chunks.join('');
+function pubOnImgChunk({ id, ts, code, chunk, idx, total }) {
+  const key = id;
+  if (!_pubImgBufs[key]) _pubImgBufs[key] = { chunks: new Array(total), recv: 0 };
+  const buf = _pubImgBufs[key];
+  if (!buf.chunks[idx]) { buf.chunks[idx] = chunk; buf.recv++; }
+  if (buf.recv === total) {
+    const fullImg = buf.chunks.join('');
     delete _pubImgBufs[key];
-    // Buscar el div del mensaje y añadir imagen
-    const msgEl=document.querySelector(`[data-pubid="${id}"]`);
-    if (msgEl) {
-      const bub=msgEl.querySelector('.pmbub');
+    const el = document.querySelector(`[data-pubid="${id}"]`);
+    if (el) {
+      const bub = el.querySelector('.pmbub');
       if (bub) {
-        const imgEl=document.createElement('img');
-        imgEl.src=fullImg; imgEl.style.cssText='max-width:100%;max-height:280px;border-radius:8px;display:block;cursor:pointer;margin-bottom:4px';
-        imgEl.onclick=()=>openLightbox(fullImg);
-        bub.prepend(imgEl);
+        const im = document.createElement('img');
+        im.src = fullImg;
+        im.style.cssText = 'max-width:100%;max-height:280px;border-radius:8px;display:block;cursor:pointer;margin-bottom:4px';
+        im.onclick = () => openLightbox(fullImg);
+        bub.prepend(im);
       }
     }
   }
 }
 
-// ── FOTO EN SALA PÚBLICA ──────────────────────
+// ── FOTO ──────────────────────────────────────────
 function pubPickPhoto() { document.getElementById('pubFileInput').click(); }
 
 function pubOnFile(e) {
-  const file=e.target.files[0]; if(!file) return;
-  if(file.size>10*1024*1024){toast('Máximo 10 MB','bad');e.target.value='';return;}
-  const reader=new FileReader();
-  reader.onload=ev=>{
-    const img=new Image();
-    img.onload=()=>{
-      const MAX=900,canvas=document.createElement('canvas');
-      let w=img.width,h=img.height;
+  const file = e.target.files[0]; if (!file) return;
+  if (file.size > 10*1024*1024) { toast('Máximo 10 MB','bad'); e.target.value=''; return; }
+  const reader = new FileReader();
+  reader.onload = ev => {
+    const img = new Image();
+    img.onload = () => {
+      const MAX=900, canvas=document.createElement('canvas');
+      let w=img.width, h=img.height;
       if(w>MAX||h>MAX){if(w>h){h=Math.round(h*MAX/w);w=MAX;}else{w=Math.round(w*MAX/h);h=MAX;}}
-      canvas.width=w;canvas.height=h;
+      canvas.width=w; canvas.height=h;
       canvas.getContext('2d').drawImage(img,0,0,w,h);
-      const compressed=canvas.toDataURL('image/jpeg',0.65);
-      _pubPendingImg=compressed;
-      pubShowImgPreview(file.name,compressed);
+      _pubPendingImg = canvas.toDataURL('image/jpeg', 0.65);
+      pubShowImgPreview(file.name, _pubPendingImg);
     };
-    img.src=ev.target.result;
+    img.src = ev.target.result;
   };
   reader.readAsDataURL(file);
-  e.target.value='';
+  e.target.value = '';
 }
 
-function pubShowImgPreview(name,src) {
-  const p=document.getElementById('pubImgPreview');if(!p)return;
-  p.innerHTML=`<img src="${src}"><span>${esc(name)}</span><button onclick="pubCancelImg()">✕</button>`;
+function pubShowImgPreview(name, src) {
+  const p = document.getElementById('pubImgPreview'); if (!p) return;
+  p.innerHTML = `<img src="${src}"><span>${esc(name)}</span><button onclick="pubCancelImg()">✕</button>`;
   p.classList.add('show');
 }
-function pubHideImgPreview(){const p=document.getElementById('pubImgPreview');if(p){p.classList.remove('show');p.innerHTML='';}}
-function pubCancelImg(){_pubPendingImg=null;pubHideImgPreview();}
+function pubHideImgPreview() { const p=document.getElementById('pubImgPreview'); if(p){p.classList.remove('show');p.innerHTML='';} }
+function pubCancelImg()      { _pubPendingImg=null; pubHideImgPreview(); }
 
-// ── EMOJI EN SALA PÚBLICA ─────────────────────
+// ── EMOJIS ────────────────────────────────────────
 function pubToggleEmoji() {
-  const p=document.getElementById('pubEpicker');if(!p)return;
-  if(p.classList.contains('open')){p.classList.remove('open');return;}
-  // Reutilizar el mismo contenido del picker privado
-  if(!p.innerHTML){
-    let html='';
-    for(const[cat,emojis]of Object.entries(EMOJIS)){
-      html+=`<div class="ecat">${cat}</div><div class="egrid">`;
-      html+=emojis.map(e=>`<div class="em" onclick="pubInsertEmoji('${e}')">${e}</div>`).join('');
-      html+='</div>';
+  const p = document.getElementById('pubEpicker'); if (!p) return;
+  if (p.classList.contains('open')) { p.classList.remove('open'); return; }
+  if (!p.innerHTML) {
+    let html = '';
+    for (const [cat, emojis] of Object.entries(EMOJIS)) {
+      html += `<div class="ecat">${cat}</div><div class="egrid">`;
+      html += emojis.map(e => `<div class="em" onclick="pubInsertEmoji('${e}')">${e}</div>`).join('');
+      html += '</div>';
     }
-    html+='<div class="ecat-custom">⭐ PERSONALIZADOS</div><div class="egrid">';
-    html+=CUSTOM_EMOJIS.map(e=>`<div class="custom-em" onclick="pubInsertEmoji('[:${e.id}:]')" title="${e.label}"><img src="${e.src}"></div>`).join('');
-    html+='</div>';
-    p.innerHTML=html;
+    html += '<div class="ecat-custom">⭐ PERSONALIZADOS</div><div class="egrid">';
+    html += CUSTOM_EMOJIS.map(e =>
+      `<div class="custom-em" onclick="pubInsertEmoji('[:${e.id}:]')" title="${e.label}"><img src="${e.src}"></div>`
+    ).join('');
+    html += '</div>';
+    p.innerHTML = html;
   }
   p.classList.add('open');
 }
 
 function pubInsertEmoji(em) {
-  const ta=document.getElementById('pubTa');if(!ta)return;
-  const s=ta.selectionStart,e=ta.selectionEnd;
-  ta.value=ta.value.slice(0,s)+em+ta.value.slice(e);
-  ta.selectionStart=ta.selectionEnd=s+em.length;
+  const ta = document.getElementById('pubTa'); if (!ta) return;
+  const s=ta.selectionStart, e=ta.selectionEnd;
+  ta.value = ta.value.slice(0,s) + em + ta.value.slice(e);
+  ta.selectionStart = ta.selectionEnd = s + em.length;
   ta.focus();
   document.getElementById('pubEpicker')?.classList.remove('open');
 }
 
-// Cerrar picker público al clicar fuera
-document.addEventListener('click', e=>{
-  const p=document.getElementById('pubEpicker');
-  if(p?.classList.contains('open')&&!p.contains(e.target)&&!e.target.closest('.iaction')) p.classList.remove('open');
+document.addEventListener('click', e => {
+  const p = document.getElementById('pubEpicker');
+  if (p?.classList.contains('open') && !p.contains(e.target) && !e.target.closest('.iaction'))
+    p.classList.remove('open');
 });
 
-// ── RENDER MENSAJE ────────────────────────────
+// ── RENDER MENSAJE ────────────────────────────────
 function pubAppendMsg(data) {
-  const el=document.getElementById('pubMsgs');if(!el)return;
-  const isMe=data.code===myCode;
-  const div=document.createElement('div');
-  div.className='pmrow'+(isMe?' me':'');
-  div.dataset.pubid=data.id;
-  const nick=esc(data.nick||data.code||'?');
-  const letter=nick[0].toUpperCase();
-  const time=hhmm(data.ts);
+  const el = document.getElementById('pubMsgs'); if (!el) return;
+  const isMe = data.code === myCode;
+  const div  = document.createElement('div');
+  div.className    = 'pmrow' + (isMe ? ' me' : '');
+  div.dataset.pubid = data.id;
+  const nick      = esc(data.nick || data.code || '?');
   const avContent = data.avatar
     ? `<img src="${data.avatar}" style="width:100%;height:100%;object-fit:cover;border-radius:7px">`
-    : letter;
-  let bubContent='';
-  if(data.img&&data.img!=='pending')
-    bubContent+=`<img src="${data.img}" style="max-width:100%;max-height:280px;border-radius:8px;display:block;cursor:pointer;margin-bottom:4px" onclick="openLightbox('${data.img.replace(/'/g,"\'")}')">`;
-  if(data.text) bubContent+=`<span>${renderText(data.text)}</span>`;
-  div.innerHTML=`
+    : nick[0].toUpperCase();
+  let bub = '';
+  if (data.img && data.img !== 'pending')
+    bub += `<img src="${data.img}" style="max-width:100%;max-height:280px;border-radius:8px;display:block;cursor:pointer;margin-bottom:4px" onclick="openLightbox(this.src)">`;
+  if (data.text) bub += `<span>${renderText(data.text)}</span>`;
+  div.innerHTML = `
     <div class="pmav${isMe?' me':''}">${avContent}</div>
     <div class="pmbody">
       <div class="pmnick">${nick}</div>
-      <div class="pmbub ${isMe?'me':'them'}">${bubContent}</div>
-      <div class="pmtime">${time}</div>
+      <div class="pmbub ${isMe?'me':'them'}">${bub}</div>
+      <div class="pmtime">${hhmm(data.ts)}</div>
     </div>`;
   el.appendChild(div);
-  el.scrollTop=el.scrollHeight;
+  el.scrollTop = el.scrollHeight;
 }
 
-function pubLog(sysTxt,type,data) {
-  if(type==='sys'){
-    const el=document.getElementById('pubMsgs');if(!el)return;
-    const d=document.createElement('div');d.className='psys';d.textContent='— '+sysTxt+' —';
-    el.appendChild(d);el.scrollTop=el.scrollHeight;
-  }
+function pubLog(txt, type) {
+  const el = document.getElementById('pubMsgs'); if (!el) return;
+  const d  = document.createElement('div');
+  d.className   = 'psys';
+  d.textContent = '— ' + txt + ' —';
+  el.appendChild(d);
+  el.scrollTop = el.scrollHeight;
 }
 
-function setPubDot(cls){const d=document.getElementById('pdot');if(d)d.className='pdot '+cls;}
+function setPubDot(cls) {
+  const d = document.getElementById('pdot'); if (d) d.className = 'pdot ' + cls;
+}
 
-// Textarea del público
-document.addEventListener('DOMContentLoaded',()=>{
-  const ta=document.getElementById('pubTa');
-  if(ta){
-    ta.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();pubSend();}});
-    ta.addEventListener('input',()=>{ta.style.height='auto';ta.style.height=Math.min(ta.scrollHeight,100)+'px';});
+// Textarea enter/resize
+document.addEventListener('DOMContentLoaded', () => {
+  const ta = document.getElementById('pubTa');
+  if (ta) {
+    ta.addEventListener('keydown', e => { if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();pubSend();} });
+    ta.addEventListener('input',   () => { ta.style.height='auto'; ta.style.height=Math.min(ta.scrollHeight,100)+'px'; });
   }
 });
 
@@ -1578,10 +1586,10 @@ function adminLock() {
 }
 
 function adminBan() {
-  const inp = document.getElementById('banInput');
+  const inp  = document.getElementById('banInput');
   const code = inp.value.trim();
   if (!/^\d{4}$/.test(code)) { toast('Código inválido (4 dígitos)','bad'); return; }
-  if (code === myCode) { toast('No puedes banearte a ti mismo','bad'); return; }
+  if (code === myCode)         { toast('No puedes banearte a ti mismo','bad'); return; }
   if (bannedCodes.includes(code)) { toast('Ya está baneado','bad'); inp.value=''; return; }
   bannedCodes.push(code);
   saveBanned();
@@ -1591,29 +1599,24 @@ function adminBan() {
 
   const banPid = 'nc_' + code;
 
-  // ── Sala pública (hub-and-spoke) ──
-  // Si soy el hub, el usuario baneado está en pubClients
-  if (pubIsHub && pubClients[banPid]?.open) {
-    try {
-      pubClients[banPid].send({ type:'you_are_banned' });
-      setTimeout(() => { try { pubClients[banPid]?.close(); } catch {} }, 400);
-    } catch {}
-  }
-  // Si soy cliente y hay hub, pedirle al hub que banee
-  // (el hub lo hará automáticamente cuando intente reconectar porque isBanned devuelve true)
-  // También cerrar mi propia conexión con ese peer si existe
-  if (!pubIsHub && pubHubConn?.open) {
-    // Notificar al hub para que eche al baneado
-    try { pubHubConn.send({ type:'admin_ban', code }); } catch {}
+  // Enviar you_are_banned por TODAS las vías posibles
+  function kickPeer(c) {
+    if (!c || !c.open) return;
+    try { c.send({ type:'you_are_banned' }); } catch {}
+    setTimeout(() => { try { c.close(); } catch {} }, 400);
   }
 
-  // ── Chat privado (CONNS) ──
-  if (CONNS[banPid]?.open) {
-    try {
-      CONNS[banPid].send({ type:'you_are_banned' });
-      setTimeout(() => { try { CONNS[banPid]?.close(); } catch {} }, 400);
-    } catch {}
+  // 1. Chat privado
+  kickPeer(CONNS[banPid]);
+
+  // 2. Sala pública — si soy el hub
+  if (pubIsHub) {
+    const client = pubClients[banPid];
+    if (client?.conn?.open) kickPeer(client.conn);
   }
+
+  // 3. Sala pública — si soy cliente, el hub lo rechazará automáticamente
+  //    porque isBanned() devuelve true cuando intente reconectar
 }
 
 function adminUnban(code) {
